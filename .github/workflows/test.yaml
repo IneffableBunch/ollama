@@ -24,17 +24,6 @@ on:
       - '!README.md'
   workflow_dispatch:
     
-
-name: Runners Windows CUDA
-
-on:
-  push:
-    branches:
-      - main
-  pull_request:
-    branches:
-      - main
-
 jobs:
   changes:
     runs-on: ubuntu-latest
