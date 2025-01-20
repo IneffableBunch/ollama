@@ -25,27 +25,27 @@ on:
   workflow_dispatch:
     
 
+name: Runners Windows CUDA
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
 jobs:
   changes:
     runs-on: ubuntu-latest
     outputs:
-      RUNNERS: ${{ steps.changes.outputs.RUNNERS }}
+      RUNNERS: ${{ steps.set-output.outputs.RUNNERS }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - id: changes
-        run: |
-          changed() {
-            git diff-tree -r --no-commit-id --name-only \
-              $(git merge-base ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }}) \
-              ${{ github.event.pull_request.head.sha }} \
-              | xargs python3 -c "import sys; from pathlib import Path; print(any(Path(x).match(glob) for x in sys.argv[1:] for glob in '$*'.split(' ')))"
-          }
-
-          {
-            echo RUNNERS=$(changed 'llama/**')
-          } >>$GITHUB_OUTPUT
+      - id: set-output
+        run: echo "RUNNERS=True" >> $GITHUB_OUTPUT
 
   runners-linux-cuda:
     needs: [changes]
@@ -201,6 +201,11 @@ jobs:
           Enter-VsDevShell -vsinstallpath 'C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise' -skipautomaticlocation -DevCmdArguments '-arch=x64 -no_logo'
           if (!(gcc --version | select-string -quiet clang)) { throw "wrong gcc compiler detected - must be clang" }
           make cuda_v$(($env:CUDA_PATH | split-path -leaf) -replace 'v(\d+).*', '$1')
+      - name: Upload the Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifact
+          path: output/build/
 
   runners-cpu:
     needs: [changes]
