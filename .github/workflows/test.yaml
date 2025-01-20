@@ -22,6 +22,8 @@ on:
       - '**/*'
       - '!docs/**'
       - '!README.md'
+  workflow_run:
+    
 
 jobs:
   changes:
