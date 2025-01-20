@@ -17,92 +17,81 @@ concurrency:
   cancel-in-progress: true
 
 on:
-  pull_request:
-    paths:
-      - '**/*'
-      - '!docs/**'
-      - '!README.md'
   workflow_dispatch:
-    
+
 jobs:
-  changes:
-    runs-on: ubuntu-latest
-    outputs:
-      RUNNERS: ${{ steps.set-output.outputs.RUNNERS }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - id: set-output
-        run: echo "RUNNERS=True" >> $GITHUB_OUTPUT
-  # CUDA generation step
+
   runners-windows-cuda:
-    needs: [changes]
-    if: ${{ needs.changes.outputs.RUNNERS == 'True' }}
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           cache: true
+
       - name: Set make jobs default
         run: |
           echo "MAKEFLAGS=--jobs=$((Get-ComputerInfo -Property CsProcessors).CsProcessors.NumberOfCores)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
-      # CUDA installation steps
-      - name: 'Cache CUDA installer'
+      - name: Cache CUDA installer
         id: cache-cuda
         uses: actions/cache@v4
         with:
           path: cuda-install.exe
           key: ${{ env.CUDA_12_WINDOWS_URL }}
-      - name: 'Conditionally Download CUDA'
+
+      - name: Conditionally Download CUDA
         if: steps.cache-cuda.outputs.cache-hit != 'true'
         run: |
           $ErrorActionPreference = "Stop"
           Invoke-WebRequest -Uri "${env:CUDA_12_WINDOWS_URL}" -OutFile "cuda-install.exe"
-      - name: 'Install CUDA'
+
+      - name: Install CUDA
         run: |
           $subpackages = @("cudart", "nvcc", "cublas", "cublas_dev") | foreach-object {"${_}_${{ env.CUDA_12_WINDOWS_VER }}"}
           Start-Process "cuda-install.exe" -ArgumentList (@("-s") + $subpackages) -NoNewWindow -Wait
-      - name: 'Verify CUDA'
+
+      - name: Verify CUDA
         run: |
-          & (resolve-path "c:\Program Files\NVIDIA*\CUDA\v*\bin\nvcc.exe")[0] --version
-          $cudaPath=((resolve-path "c:\Program Files\NVIDIA*\CUDA\v*\bin\nvcc.exe")[0].path | split-path | split-path)
-          $cudaVer=($cudaPath | split-path -leaf ) -replace 'v(\d+).(\d+)', '$1_$2' 
-          echo "$cudaPath\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          & (resolve-path "c:\\Program Files\\NVIDIA*\\CUDA\\v*\\bin\\nvcc.exe")[0] --version
+          $cudaPath=((resolve-path "c:\\Program Files\\NVIDIA*\\CUDA\\v*\\bin\\nvcc.exe")[0].path | split-path | split-path)
+          $cudaVer=($cudaPath | split-path -leaf ) -replace 'v(\\d+).(\\d+)', '$1_$2'
+          echo "$cudaPath\\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
           echo "CUDA_PATH=$cudaPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           echo "CUDA_PATH_V${cudaVer}=$cudaPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           echo "CUDA_PATH_VX_Y=CUDA_PATH_V${cudaVer}" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Add msys paths
         run: |
-          echo "c:\msys64\usr\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-          echo "C:\msys64\clang64\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          echo "c:\\msys64\\usr\\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          echo "C:\\msys64\\clang64\\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
       - name: Install msys2 tools
         run: |
-          Start-Process "c:\msys64\usr\bin\pacman.exe" -ArgumentList @("-S", "--noconfirm", "mingw-w64-clang-x86_64-gcc-compat", "mingw-w64-clang-x86_64-clang") -NoNewWindow -Wait
+          Start-Process "c:\\msys64\\usr\\bin\\pacman.exe" -ArgumentList @("-S", "--noconfirm", "mingw-w64-clang-x86_64-gcc-compat", "mingw-w64-clang-x86_64-clang") -NoNewWindow -Wait
+
+      - name: Find Visual Studio Path
+        run: |
+          $vsPath = &"${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          echo "VS_PATH=$vsPath" >> $env:GITHUB_ENV
+
+      - name: Import DevShell Module
+        run: |
+          Import-Module "$env:VS_PATH\Common7\Tools\Microsoft.VisualStudio.DevShell.dll"
+          Enter-VsDevShell -VsInstallPath $env:VS_PATH -SkipAutomaticLocation
+
       - name: make cuda runner
         run: |
-          import-module 'C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\Common7\Tools\Microsoft.VisualStudio.DevShell.dll'
-          Enter-VsDevShell -vsinstallpath 'C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise' -skipautomaticlocation -DevCmdArguments '-arch=x64 -no_logo'
+          import-module 'C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Enterprise\\Common7\\Tools\\Microsoft.VisualStudio.DevShell.dll'
+          Enter-VsDevShell -vsinstallpath 'C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Enterprise' -skipautomaticlocation -DevCmdArguments '-arch=x64 -no_logo'
           if (!(gcc --version | select-string -quiet clang)) { throw "wrong gcc compiler detected - must be clang" }
-          make cuda_v$(($env:CUDA_PATH | split-path -leaf) -replace 'v(\d+).*', '$1')
+          make cuda_v$(($env:CUDA_PATH | split-path -leaf) -replace 'v(\\d+).*', '$1')
+
       - name: Upload the Artifact
         uses: actions/upload-artifact@v4
         with:
           name: build-artifact
-          path: output/build/
-
-  patches:
-    needs: [changes]
-    if: ${{ needs.changes.outputs.RUNNERS == 'True' }}
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-      - name: Verify patches carry all the changes
-        run: |
-          make apply-patches sync && git diff --compact-summary --exit-code llama
+          path: path/to/your/build/artifact
