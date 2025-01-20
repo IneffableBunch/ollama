@@ -22,7 +22,7 @@ on:
       - '**/*'
       - '!docs/**'
       - '!README.md'
-  workflow_run:
+  workflow_dispatch:
     
 
 jobs:
